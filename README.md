@@ -1,4 +1,4 @@
-# MeTube Telegram Bot
+# MeTube AutoSave Bot
 
 <div align="center">
 
@@ -6,115 +6,83 @@
 [![License](https://img.shields.io/github/license/lzylipu/metube-autosave-bot.svg)](./LICENSE)
 [![Docker](https://img.shields.io/docker/pulls/lzylipu/metubebot)](https://hub.docker.com/r/lzylipu/metubebot)
 
-**极简视频下载 Telegram 机器人**
+**Minimal Telegram bot for video/audio download via MeTube**
 
 </div>
 
 ---
 
-## 简介
+## Features
 
-基于 [NoneBot2](https://v2.nonebot.dev/) 的 Telegram 机器人，配合 [MeTube](https://github.com/alexta69/metube) 实现 YouTube、B站等视频自动下载。
+- **One-tap download**: Send `1` -> link + mode -> done
+- **Multi-platform**: YouTube, Bilibili, and 1000+ yt-dlp supported sites
+- **Video/Audio modes**: Mode `1` = best video, Mode `2` = MP3 audio
+- **Progress tracking**: Real-time download progress notifications
+- **Privacy-first**: Only responds to configured superuser
 
-**特点**：
-- 支持 YouTube、B站、等多平台
-- 视频音频模式切换
-- 自动识别链接来源
-- 进度推送通知
+## Quick Start
 
----
-
-## 快速开始
-
-### Docker 部署
+### Docker
 
 ```bash
 docker run -d \
   --name metubebot \
-  -e SUPERUSER="你的Telegram用户ID" \
-  -e TELEGRAM_BOT_TOKEN="你的Bot Token" \
-  -e METUBE_ENDPOINT="http://你的MeTube地址:8081" \
+  -e SUPERUSER="your" \
+  -e TELEGRAM_BOT_TOKEN=*** \
+  -e METUBE_ENDPOINT="http://your:8081" \
   --restart unless-stopped \
   lzylipu/metubebot:latest
 ```
 
 ### Docker Compose
 
-```yaml
-services:
-  metubebot:
-    image: lzylipu/metubebot:latest
-    container_name: metubebot
-    environment:
-      SUPERUSER: "你的Telegram用户ID"
-      TELEGRAM_BOT_TOKEN: "你的Bot Token"
-      METUBE_ENDPOINT: "http://metube:8081"
-    restart: unless-stopped
+```bash
+cp .env.example .env  # fill in your values
+docker compose up -d
 ```
 
----
+## Environment Variables
 
-## 环境变量
+| Variable | Required | Default | Description |
+|----------|:--------:|---------|-------------|
+| `TELEGRAM_BOT_TOKEN` | yes | | Bot token from [@BotFather](https://t.me/BotFather) |
+| `SUPERUSER` | yes | | Your Telegram user ID from [@userinfobot](https://t.me/userinfobot) |
+| `METUBE_ENDPOINT` | yes | | MeTube service URL |
+| `SIMPLE_COMMAND` | | `1` | Trigger command |
+| `PROGRESS_ENABLED` | | `true` | Enable progress notifications |
+| `PROGRESS_INTERVAL_SECONDS` | | `5` | Progress poll interval |
+| `PROGRESS_TIMEOUT_SECONDS` | | `1800` | Progress monitor timeout |
 
-| 变量 | 必填 | 说明 |
-|------|:----:|------|
-| `TELEGRAM_BOT_TOKEN` | ✓ | Bot Token（从 [@BotFather](https://t.me/BotFather) 获取）|
-| `SUPERUSER` | ✓ | 用户 ID（从 [@userinfobot](https://t.me/userinfobot) 获取）|
-| `METUBE_ENDPOINT` | ✓ | MeTube 服务地址 |
-| `SIMPLE_COMMAND` | | 触发指令，默认 `1` |
-| `PROGRESS_ENABLED` | | 进度推送，默认 `true` |
+## Usage
 
----
-
-## 使用方法
-
-### 模式说明
-
-| 输入格式 | 下载内容 |
-|---------|---------|
-| `链接 1` | 最清晰视频 |
-| `链接 2` | MP3 音频 |
-
-### 示例
+| Input | Action |
+|-------|--------|
+| `link 1` | Download best quality video |
+| `link 2` | Download as MP3 audio |
 
 ```
-你：1
-机器人：继续
-你：https://www.youtube.com/watch?v=xxxxx 1
-机器人：已识别：YouTube 模式1 视频
-机器人：好了
+You: 1
+Bot: continue
+You: https://www.youtube.com/watch?v=xxxxx 1
+Bot: YouTube mode1 video
+Bot: done
 ```
 
-```
-你：1
-机器人：继续
-你：https://www.bilibili.com/video/BVxxxxx 2
-机器人：已识别：B站 模式2 音频
-机器人：好了
-```
-
----
-
-## 支持平台
+## Supported Platforms
 
 - YouTube (`youtube.com`, `youtu.be`)
-- B站 (`bilibili.com`, `b23.tv`)
-- 其他 `yt-dlp` 支持的站点
+- Bilibili (`bilibili.com`, `b23.tv`)
+- Any site supported by [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 
----
+## Setup
 
-## 重要设置
+Disable privacy mode in [@BotFather](https://t.me/BotFather): `/setprivacy` -> select bot -> `Disable`.
 
-在 [@BotFather](https://t.me/BotFather) 执行 `/setprivacy` → 选择机器人 → `Disable`，关闭隐私模式。
+## Credits
 
----
+- [alexta69/metube](https://github.com/alexta69/metube) - Download backend
+- [NoneBot2](https://v2.nonebot.dev/) - Bot framework
 
-## 致谢
+## License
 
-- [alexta69/metube](https://github.com/alexta69/metube) - 下载后端
-- [fllesser/nonebot-plugin-quark-autosave](https://github.com/fllesser/nonebot-plugin-quark-autosave) - 项目参考
-- [NoneBot2](https://v2.nonebot.dev/) - 机器人框架
-
-## 许可证
-
-[MIT License](./LICENSE)
+[MIT](./LICENSE)

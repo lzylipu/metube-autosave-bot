@@ -17,16 +17,16 @@ __plugin_meta__ = PluginMetadata(
     description="极简 TG 私聊插件：1 -> 继续 -> 视频链接+空格+模式 -> 调用 MeTube 立即下载",
     usage="发送 1 后按提示发送：视频链接 空格 1/2",
     type="application",
-    homepage="https://github.com/lzylipu/quark-autosave-bot",
+    homepage="https://github.com/lzylipu/metube-autosave-bot",
     config=Config,
     supported_adapters=inherit_supported_adapters(),
-    extra={"author": "lzylipu / modified for MeTube"},
+    extra={"author": "lzylipu"},
 )
 
 WAITING_USERS: dict[str, bool] = {}
 PROGRESS_TASKS: dict[str, asyncio.Task] = {}
 
-simple_qas = on_message(permission=SUPERUSER, block=True)
+metube_handler = on_message(permission=SUPERUSER, block=True)
 
 SUPPORTED_SCHEMES = {"http", "https"}
 YOUTUBE_HOSTS = {
@@ -169,19 +169,19 @@ async def monitor_progress(bot: Bot, event: Event, url: str, source: str, mode_h
                         pass
                 return
     except Exception as e:
-        print(f"[nonebot_plugin_quark_autosave] progress monitor error ({mode_hint}): {e}")
+        print(f"[metube-autosave-bot] progress monitor error ({mode_hint}): {e}")
     finally:
         PROGRESS_TASKS.pop(url, None)
 
 
-@simple_qas.handle()
+@metube_handler.handle()
 async def _(bot: Bot, event: Event):
     text = get_text(event)
     user_key = get_user_key(event)
 
     if text == str(plugin_config.simple_command):
         WAITING_USERS[user_key] = True
-        await simple_qas.finish("继续")
+        await metube_handler.finish("继续")
 
     if not WAITING_USERS.get(user_key, False):
         return
@@ -195,11 +195,11 @@ async def _(bot: Bot, event: Event):
     except FinishedException:
         raise
     except RequestParseError as e:
-        print(f"[nonebot_plugin_quark_autosave] invalid request: {e}")
-        await simple_qas.finish("错")
+        print(f"[metube-autosave-bot] invalid request: {e}")
+        await metube_handler.finish("错")
     except Exception as e:
-        print(f"[nonebot_plugin_quark_autosave] error: {e}")
-        await simple_qas.finish("错")
+        print(f"[metube-autosave-bot] error: {e}")
+        await metube_handler.finish("错")
 
     if plugin_config.progress_enabled:
         existing = PROGRESS_TASKS.get(payload.url)
@@ -209,5 +209,5 @@ async def _(bot: Bot, event: Event):
             monitor_progress(bot, event, payload.url, source, mode_hint)
         )
 
-    await simple_qas.send(f"已识别：{source}\n{mode_hint}")
-    await simple_qas.finish("好了")
+    await metube_handler.send(f"已识别：{source}\n{mode_hint}")
+    await metube_handler.finish("好了")
