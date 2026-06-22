@@ -2,7 +2,7 @@ import asyncio
 import re
 from urllib.parse import urlparse
 
-from nonebot import on_message
+from nonebot import logger, on_message
 from nonebot.adapters import Bot, Event
 from nonebot.exception import FinishedException
 from nonebot.permission import SUPERUSER
@@ -13,8 +13,8 @@ from .config import Config, plugin_config
 from .model import AddTaskPayload
 
 __plugin_meta__ = PluginMetadata(
-    name="MeTube Telegram 下载机器人",
-    description="极简 TG 私聊插件：1 -> 继续 -> 视频链接+空格+模式 -> 调用 MeTube 立即下载",
+    name="MeTube AutoSave",
+    description="Minimal MeTube plugin: 1 -> link+mode -> auto download",
     usage="发送 1 后按提示发送：视频链接 空格 1/2",
     type="application",
     homepage="https://github.com/lzylipu/metube-autosave-bot",
@@ -23,42 +23,37 @@ __plugin_meta__ = PluginMetadata(
     extra={"author": "lzylipu"},
 )
 
-WAITING_USERS: dict[str, bool] = {}
+# 等待状态 + 60秒自动超时清理
+WAITING_USERS: dict[str, float] = {}  # user_key -> timestamp
 PROGRESS_TASKS: dict[str, asyncio.Task] = {}
+WAIT_TIMEOUT = 60.0
 
 metube_handler = on_message(permission=SUPERUSER, block=True)
 
 SUPPORTED_SCHEMES = {"http", "https"}
 YOUTUBE_HOSTS = {
-    "youtube.com",
-    "www.youtube.com",
-    "m.youtube.com",
-    "youtu.be",
-    "music.youtube.com",
+    "youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "music.youtube.com",
 }
 BILIBILI_HOSTS = {
-    "bilibili.com",
-    "www.bilibili.com",
-    "m.bilibili.com",
-    "b23.tv",
+    "bilibili.com", "www.bilibili.com", "m.bilibili.com", "b23.tv",
 }
-VIDEO_HOST_HINTS = [
-    "youtube.com",
-    "youtu.be",
-    "bilibili.com",
-    "b23.tv",
-    "twitter.com",
-    "x.com",
-    "instagram.com",
-    "tiktok.com",
-    "vimeo.com",
-]
 INVALID_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".txt"}
-MODE_HELP = "链接后需跟一个空格和模式：1=best/any，2=best/mp3"
 
 
 class RequestParseError(ValueError):
     pass
+
+
+def _cleanup_expired_users():
+    """清理超时的等待状态"""
+    try:
+        loop = asyncio.get_running_loop()
+        now = loop.time()
+    except RuntimeError:
+        return
+    expired = [k for k, t in WAITING_USERS.items() if now - t > WAIT_TIMEOUT]
+    for k in expired:
+        del WAITING_USERS[k]
 
 
 def get_user_key(event: Event) -> str:
@@ -81,7 +76,7 @@ def detect_source(host: str) -> str:
         return "YouTube"
     if host in BILIBILI_HOSTS:
         return "B站"
-    return "通用链接"
+    return "Other"
 
 
 def normalize_url(text: str) -> tuple[str, str]:
@@ -106,7 +101,6 @@ def normalize_url(text: str) -> tuple[str, str]:
     path_lower = (parsed.path or "").lower()
     if any(path_lower.endswith(ext) for ext in INVALID_SUFFIXES):
         raise RequestParseError("unsupported resource")
-
     if not parsed.path and not parsed.query:
         raise RequestParseError("too generic")
 
@@ -116,77 +110,104 @@ def normalize_url(text: str) -> tuple[str, str]:
 def parse_request(text: str) -> tuple[AddTaskPayload, str, str]:
     parts = text.strip().rsplit(maxsplit=1)
     if len(parts) != 2:
-        raise RequestParseError("missing mode")
+        raise RequestParseError("missing mode (usage: link 1=video, link 2=mp3)")
     url_part, mode = parts
     url, source = normalize_url(url_part)
 
     if mode == "1":
         payload = AddTaskPayload(url=url, quality="best", format="any", auto_start=True)
-        mode_hint = "模式1 视频"
+        mode_hint = "视频"
     elif mode == "2":
         payload = AddTaskPayload(url=url, quality="best", format="mp3", auto_start=True)
-        mode_hint = "模式2 音频"
+        mode_hint = "音频"
     else:
-        raise RequestParseError("invalid mode")
+        raise RequestParseError("invalid mode (1=video, 2=mp3)")
 
     return payload, source, mode_hint
 
 
 async def monitor_progress(bot: Bot, event: Event, url: str, source: str, mode_hint: str):
+    """后台监控下载进度，推送通知"""
     last_progress = None
     try:
-        deadline = asyncio.get_event_loop().time() + plugin_config.progress_timeout_seconds
-        while asyncio.get_event_loop().time() < deadline:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + plugin_config.progress_timeout_seconds
+        while loop.time() < deadline:
             await asyncio.sleep(plugin_config.progress_interval_seconds)
-            async with MeTubeClient() as client:
-                history = await client.get_history()
+            try:
+                async with MeTubeClient() as client:
+                    history = await client.get_history()
+            except Exception as e:
+                logger.warning(f"Progress poll failed: {e}")
+                continue
+
             found = history.find_by_url(url)
             if not found:
                 continue
+
             bucket, item = found
             progress = item.progress_text()
+
+            # 下载中：推送进度
             if bucket in {"queue", "pending"} and progress and progress != last_progress:
                 last_progress = progress
                 try:
-                    await bot.send(event, f"{source} {mode_hint}\n进度 {progress}")
+                    await bot.send(event, f"{source} {mode_hint}\n{progress}")
                 except Exception:
                     pass
+
+            # 下载完成
             if bucket == "done":
-                status_text = (item.status or "").lower()
                 error_text = item.error or str(item.extra.get("error") or item.extra.get("msg") or "")
-                if error_text or any(word in status_text for word in ["error", "fail", "cancel"]):
+                status = (item.status or "").lower()
+                if error_text or any(w in status for w in ["error", "fail", "cancel"]):
                     try:
                         await bot.send(event, f"{source} {mode_hint}\n下载失败")
                     except Exception:
                         pass
                 else:
-                    message = f"{source} {mode_hint}\n下载完成"
+                    msg = f"{source} {mode_hint}\n下载完成"
                     if item.filename:
-                        message = f"{source} {mode_hint}\n下载完成\n{item.filename}"
+                        msg += f"\n{item.filename}"
                     try:
-                        await bot.send(event, message)
+                        await bot.send(event, msg)
                     except Exception:
                         pass
                 return
+
+    except asyncio.CancelledError:
+        pass
     except Exception as e:
-        print(f"[metube-autosave-bot] progress monitor error ({mode_hint}): {e}")
+        logger.warning(f"Progress monitor error: {e}")
     finally:
         PROGRESS_TASKS.pop(url, None)
 
 
 @metube_handler.handle()
-async def _(bot: Bot, event: Event):
+async def handle_message(bot: Bot, event: Event):
+    _cleanup_expired_users()
     text = get_text(event)
     user_key = get_user_key(event)
 
+    # 触发等待模式
     if text == str(plugin_config.simple_command):
-        WAITING_USERS[user_key] = True
+        loop = asyncio.get_running_loop()
+        WAITING_USERS[user_key] = loop.time()
         await metube_handler.finish("继续")
 
-    if not WAITING_USERS.get(user_key, False):
+    # 非等待状态，忽略
+    if user_key not in WAITING_USERS:
         return
 
-    WAITING_USERS[user_key] = False
+    # 检查是否超时
+    loop = asyncio.get_running_loop()
+    elapsed = loop.time() - WAITING_USERS[user_key]
+    if elapsed > WAIT_TIMEOUT:
+        del WAITING_USERS[user_key]
+        await metube_handler.finish("超时，请重新发送指令")
+
+    # 解析请求
+    WAITING_USERS.pop(user_key, None)
 
     try:
         payload, source, mode_hint = parse_request(text)
@@ -195,12 +216,13 @@ async def _(bot: Bot, event: Event):
     except FinishedException:
         raise
     except RequestParseError as e:
-        print(f"[metube-autosave-bot] invalid request: {e}")
+        logger.info(f"Invalid request: {e}")
         await metube_handler.finish("错")
     except Exception as e:
-        print(f"[metube-autosave-bot] error: {e}")
+        logger.error(f"MeTube add task failed: {e}")
         await metube_handler.finish("错")
 
+    # 启动后台进度监控
     if plugin_config.progress_enabled:
         existing = PROGRESS_TASKS.get(payload.url)
         if existing and not existing.done():
