@@ -1,20 +1,10 @@
-<div align="center">
-
 # 🎬 MeTube AutoSave Bot
 
 **Telegram Bot for MeTube Auto-Download**
 
 Send a link, auto-download video/audio — YouTube, Bilibili, 1000+ sites 🚀
 
-[![Python](https://img.shields.io/badge/python-3.12-blue.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![NoneBot2](https://img.shields.io/badge/NoneBot2-2.4+-orange.svg?style=flat-square)](https://v2.nonebot.dev/)
-[![Docker](https://img.shields.io/docker/pulls/lzylipu/metubebot?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/r/lzylipu/metubebot)
-[![License](https://img.shields.io/github/license/lzylipu/metube-autosave-bot?style=flat-square)](./LICENSE)
-[![GitHub](https://img.shields.io/badge/_repo-metube--autosave--bot-181717.svg?style=flat-square&logo=github&logoColor=white)](https://github.com/lzylipu/metube-autosave-bot)
-
 English · [简体中文](./README.md)
-
-</div>
 
 ---
 
